@@ -4,15 +4,19 @@ class RecordingLog {
   final double longitude;
   final double averageMotionIntensity;
 
-  // Constructor
-  RecordingLog({
+  const RecordingLog({
     required this.filePath,
     required this.latitude,
     required this.longitude,
     required this.averageMotionIntensity,
   });
-  // Getters
+
   String get fileName => filePath.split('/').last;
 
-  bool get isHighIntensity => averageMotionIntensity >= 15;
+  bool get isHighIntensity => averageMotionIntensity >= 15.0;
+
+  @override
+  String toString() =>
+      'RecordingLog(file: $fileName, lat: $latitude, lon: $longitude, '
+      'intensity: ${averageMotionIntensity.toStringAsFixed(2)})';
 }

@@ -17,9 +17,9 @@ class LoggerProvider extends ChangeNotifier {
   // --- Private internals ---
   final _recorder = AudioRecorder();
   final _player = AudioPlayer();
-  StreamSubscription? _accelSub;
-  StreamSubscription? _locationSub;
-  StreamSubscription? _playerSub;
+  StreamSubscription<AccelerometerEvent>? _accelSub;
+  StreamSubscription<Position>? _locationSub;
+  StreamSubscription<PlayerState>? _playerSub;
 
   final List<double> _motionReadings = [];
   Position? _currentPosition;
@@ -30,29 +30,40 @@ class LoggerProvider extends ChangeNotifier {
     if (isRecording) return;
 
     _motionReadings.clear();
+    _currentPosition = null;
 
-    // Permission Check
+    // Permission check
     final hasPermissions = await _recorder.hasPermission();
     if (!hasPermissions) return;
 
-    LocationPermission permission = await Geolocator.requestPermission();
+    final permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever) {
       return;
     }
 
-    // --- Location ---
+    // Fetch initial position with a timeout to avoid hanging
     try {
-      _currentPosition = await Geolocator.getCurrentPosition();
-    } catch (e) {
+      _currentPosition = await Geolocator.getCurrentPosition().timeout(
+        const Duration(seconds: 10),
+      );
+    } catch (_) {
       _currentPosition = null;
     }
 
-    _locationSub = Geolocator.getPositionStream().listen((pos) {
-      _currentPosition = pos;
-    });
+    // Stream live location updates
+    _locationSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 5,
+          ),
+        ).listen(
+          (pos) => _currentPosition = pos,
+          onError: (_) {}, // silently ignore stream errors
+        );
 
-    // Start accelerometer sampling every 250 ms
+    // Accelerometer sampling every 250 ms
     _accelSub =
         accelerometerEventStream(
           samplingPeriod: const Duration(milliseconds: 250),
@@ -83,24 +94,22 @@ class LoggerProvider extends ChangeNotifier {
 
   Future<void> stopRecording() async {
     if (!isRecording) return;
-    // Stop recording and get file path
+
+    // Stop sensors first so final readings are captured cleanly
+    await _accelSub?.cancel();
+    _accelSub = null;
+    await _locationSub?.cancel();
+    _locationSub = null;
+
     final path = await _recorder.stop();
 
-    // If recording failed, just reset state
-    if (path == null) {
-      isRecording = false;
-      notifyListeners();
-      return;
-    }
-    // Stop sensors
-    await _accelSub?.cancel();
-    await _locationSub?.cancel();
+    isRecording = false;
 
-    final avgIntensity = _motionReadings.isEmpty
-        ? 0.0
-        : _motionReadings.reduce((a, b) => a + b) / _motionReadings.length;
+    if (path != null && _currentPosition != null) {
+      final avgIntensity = _motionReadings.isEmpty
+          ? 0.0
+          : _motionReadings.reduce((a, b) => a + b) / _motionReadings.length;
 
-    if (_currentPosition != null) {
       recordings.add(
         RecordingLog(
           filePath: path,
@@ -111,41 +120,47 @@ class LoggerProvider extends ChangeNotifier {
       );
     }
 
-    isRecording = false;
     notifyListeners();
   }
 
   // --- Playback ---
 
   Future<void> togglePlayback(String filePath) async {
-    if (isRecording) return; // block overlap
+    if (isRecording) return;
+
+    // Stop current playback regardless
+    await _playerSub?.cancel();
+    _playerSub = null;
+    await _player.stop();
 
     if (currentlyPlayingPath == filePath) {
-      await _player.stop();
+      // Tapping the same tile stops it
       currentlyPlayingPath = null;
       notifyListeners();
       return;
     }
 
-    // Stop anything already playing
-    await _player.stop();
     currentlyPlayingPath = filePath;
     notifyListeners();
 
-    await _player.setFilePath(filePath);
-    _player.play();
+    try {
+      await _player.setFilePath(filePath);
+      _player.play(); // fire-and-forget; state tracked via stream below
 
-    // Auto-stop when finished
-    _playerSub?.cancel();
-    _playerSub = _player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        currentlyPlayingPath = null;
-        notifyListeners();
-      }
-    });
+      _playerSub = _player.playerStateStream.listen((state) {
+        if (state.processingState == ProcessingState.completed) {
+          currentlyPlayingPath = null;
+          notifyListeners();
+        }
+      });
+    } catch (_) {
+      // File unreadable or codec error — reset state gracefully
+      currentlyPlayingPath = null;
+      notifyListeners();
+    }
   }
 
-  @override // Clean up resources
+  @override
   void dispose() {
     _recorder.dispose();
     _player.dispose();

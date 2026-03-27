@@ -31,15 +31,12 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.1.2
-  record: ^5.1.2          # audio recording
-  just_audio: ^0.9.40     # audio playback
-  sensors_plus: ^5.0.1    # accelerometer
-  geolocator: ^12.0.0     # GPS
+  record: ^5.2.1
+  just_audio: ^0.9.40
+  sensors_plus: ^5.0.1
+  geolocator: ^12.0.0
   permission_handler: ^11.3.1
   path_provider: ^2.1.5
-
-  # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
 
 dev_dependencies:

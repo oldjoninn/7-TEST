@@ -9,32 +9,71 @@ class RecordingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final logger = context.watch<LoggerProvider>();
-    final isPlaying = logger.currentlyPlayingPath == log.filePath;
+    // Use select so this tile only rebuilds when its own play state changes,
+    // not whenever any other tile starts/stops.
+    final isPlaying = context.select<LoggerProvider, bool>(
+      (p) => p.currentlyPlayingPath == log.filePath,
+    );
+    final isRecording = context.select<LoggerProvider, bool>(
+      (p) => p.isRecording,
+    );
+
+    final activeColor = Colors.pink[700]!;
+    final activeBg = Colors.pink[50]!;
 
     return ListTile(
-      tileColor: isPlaying ? Colors.pink[50] : null,
+      tileColor: isPlaying ? activeBg : null,
       title: Text(
         log.fileName,
         style: TextStyle(
           fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
           color: isPlaying ? Colors.pink[900] : null,
         ),
+        overflow: TextOverflow.ellipsis,
       ),
-      subtitle: Text(
-        '(${log.latitude.toStringAsFixed(7)}, ${log.longitude.toStringAsFixed(7)})\n'
-        'Motion intensity: ${log.averageMotionIntensity.toStringAsFixed(5)}',
-        style: TextStyle(color: isPlaying ? Colors.pink[700] : null),
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${log.latitude.toStringAsFixed(7)}, '
+            '${log.longitude.toStringAsFixed(7)}',
+            style: TextStyle(color: isPlaying ? activeColor : null),
+          ),
+          Row(
+            children: [
+              Text(
+                'Motion: ${log.averageMotionIntensity.toStringAsFixed(2)}',
+                style: TextStyle(color: isPlaying ? activeColor : null),
+              ),
+              if (log.isHighIntensity) ...[
+                const SizedBox(width: 6),
+                Icon(Icons.directions_run, size: 14, color: Colors.orange[700]),
+                Text(
+                  ' High',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.orange[700],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
       isThreeLine: true,
       trailing: IconButton(
+        tooltip: isPlaying ? 'Stop' : 'Play',
         icon: Icon(
-          isPlaying ? Icons.stop : Icons.play_arrow,
-          color: isPlaying ? Colors.pink[700] : null,
+          isPlaying ? Icons.stop_circle_outlined : Icons.play_circle_outline,
+          color: isPlaying ? activeColor : null,
+          size: 28,
         ),
-        onPressed: logger.isRecording
-            ? null // can't play while recording
-            : () => logger.togglePlayback(log.filePath),
+        // Disable during recording; also disable other tiles while one plays
+        // (but allow the currently-playing tile to be stopped).
+        onPressed: isRecording
+            ? null
+            : () => context.read<LoggerProvider>().togglePlayback(log.filePath),
       ),
     );
   }

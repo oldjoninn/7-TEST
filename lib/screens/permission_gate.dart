@@ -17,8 +17,20 @@ class _PermissionGateState extends State<PermissionGate> {
   }
 
   Future<void> _requestPermissions() async {
+    // Request microphone via permission_handler
     await Permission.microphone.request();
-    await Geolocator.requestPermission();
+
+    // Request location via geolocator (handles both coarse + fine on Android,
+    // and NSLocationWhenInUseUsageDescription on iOS).
+    // We only call this once here — the provider checks the current status
+    // without requesting again.
+    final locPermission = await Geolocator.requestPermission();
+
+    // If permanently denied, open settings so the user can enable it manually
+    if (locPermission == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+    }
+
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -29,6 +41,17 @@ class _PermissionGateState extends State<PermissionGate> {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    return const Scaffold(
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Requesting permissions…'),
+          ],
+        ),
+      ),
+    );
   }
 }
